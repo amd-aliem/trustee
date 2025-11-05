@@ -9,7 +9,9 @@ use openssl::{
     nid::Nid,
     x509::{self, X509},
 };
-use reqwest::{get, Response as ReqwestResponse, StatusCode};
+use reqwest::{Response as ReqwestResponse, StatusCode};
+use http_cache_reqwest::{CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions};
+use reqwest_middleware::ClientBuilder;
 use serde;
 use serde_json::json;
 use sev::{
@@ -473,7 +475,19 @@ async fn fetch_vcek_from_kds(
         }
     };
     // VCEK in DER format
-    let vcek_rsp: ReqwestResponse = get(vcek_url.clone())
+    let client = reqwest::Client::new();
+
+    let cached_client = ClientBuilder::new(client)
+        .with(Cache(HttpCache {
+            mode: CacheMode::Default,
+            manager: CACacheManager::default(),
+            options: HttpCacheOptions::default(),
+        }))
+        .build();
+
+    let vcek_rsp: ReqwestResponse = cached_client
+        .get(vcek_url.clone())
+        .send()
         .await
         .context("Unable to send request for VCEK")?;
 
