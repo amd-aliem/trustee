@@ -242,9 +242,9 @@ pub enum VCEKCacheConfig {
     #[default]
     None,
 
-    /* HTTP cache using reqwest with cacache backend (disk)
-    Fields: offline_mode, cache_dir
-    WARNING: cacache has NO automatic eviction */
+    /// HTTP cache using reqwest with cacache backend (disk)
+    /// Fields: offline_mode, cache_dir
+    /// WARNING: cacache has NO automatic eviction
     HttpCacheReqwest(HttpCacheReqwestConfig),
 }
 
