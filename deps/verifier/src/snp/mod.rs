@@ -58,6 +58,9 @@ pub(crate) const FMC_SPL_OID: Oid<'static> = oid!(1.3.6 .1 .4 .1 .3704 .1 .3 .9)
 const KDS_CERT_SITE: &str = "https://kdsintf.amd.com";
 const KDS_VCEK: &str = "/vcek/v1";
 
+/// Directory for VCEK configured with DiskCache
+const VCEK_CACHE_DIR: &str = "/opt/confidential-containers/vcek-cache";
+
 /// Attestation report versions supported
 const REPORT_VERSION_MIN: u32 = 3;
 const REPORT_VERSION_MAX: u32 = 5;
@@ -203,38 +206,6 @@ pub struct SnpVerifierConfig {
     vcek_cache: VCEKCacheConfig,
 }
 
-fn default_cache_dir() -> PathBuf {
-    PathBuf::from("./cache")
-}
-
-/// Configuration for HTTP caching using reqwest
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct HttpCacheReqwestConfig {
-    #[serde(default)]
-    pub offline_mode: bool,
-    #[serde(default = "default_cache_dir")]
-    pub cache_dir: PathBuf,
-}
-
-impl Default for HttpCacheReqwestConfig {
-    fn default() -> Self {
-        Self {
-            offline_mode: false,
-            cache_dir: default_cache_dir(),
-        }
-    }
-}
-
-impl HttpCacheReqwestConfig {
-    pub fn cache_mode(&self) -> CacheMode {
-        if self.offline_mode {
-            CacheMode::ForceCache
-        } else {
-            CacheMode::Default
-        }
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 #[derive(Default)]
@@ -242,10 +213,9 @@ pub enum VCEKCacheConfig {
     #[default]
     None,
 
-    /* HTTP cache using reqwest with cacache backend (disk)
-    Fields: offline_mode, cache_dir
-    WARNING: cacache has NO automatic eviction */
-    HttpCacheReqwest(HttpCacheReqwestConfig),
+    /// Disk-based cache using reqwest with cacache backend
+    /// WARNING: cacache has NO automatic eviction
+    DiskCache,
 }
 
 impl VCEKCacheConfig {
@@ -254,7 +224,7 @@ impl VCEKCacheConfig {
 
         match self {
             VCEKCacheConfig::None => ClientBuilder::new(client).build(),
-            VCEKCacheConfig::HttpCacheReqwest(config) => {
+            VCEKCacheConfig::DiskCache => {
                 let client_options = HttpCacheOptions {
                     cache_status_headers: true,
                     ..Default::default()
@@ -262,8 +232,8 @@ impl VCEKCacheConfig {
 
                 ClientBuilder::new(client)
                     .with(Cache(HttpCache {
-                        mode: config.cache_mode(),
-                        manager: CACacheManager::new(config.cache_dir.clone(), true),
+                        mode: CacheMode::ForceCache,
+                        manager: CACacheManager::new(PathBuf::from(VCEK_CACHE_DIR), true),
                         options: client_options,
                     }))
                     .build()

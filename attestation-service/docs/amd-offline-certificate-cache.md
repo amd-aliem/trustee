@@ -69,7 +69,7 @@ the VCEK URL file and output directory.
 cd tools/cache-preloader
 
 # Preload the cache and create an archive
-cargo run -- -u vcek_urls.txt -c ./vcek_cache -a vcek_cache.tar.gz
+cargo run -- -u vcek_urls.txt -c ./vcek-cache -a vcek-cache.tar.gz
 ```
 
 ### 3. Configure the attestation service
@@ -83,10 +83,8 @@ Update the attestation config file to use a predefined cache:
     // ... other fields ...
     "verifier_config": {
         "snp_verifier": {
-            "cache": {
-                "type": "HttpCacheReqwest",
-                "offline_mode": true,
-                "cache_dir": "/path/to/cache"
+            "vcek_cache": {
+                "type": "DiskCache",
             }
         }
     }
@@ -103,15 +101,15 @@ maintaining the same directory structure.
 - **Install on running attestation service**
 
 You may copy the cache to the container after it has started - ensure that
-the as-config.json has picked up your expected cache directory:
+the as-config.json has picked up the DiskCache settings by checking the logs:
 ```bash
-$ docker logs trustee-as-1 | grep cache_dir
-                            cache_dir: "/vcek_cache",
+$ docker logs trustee-as-1 | grep vcek_cache
+                            vcek_cache: DiskCache,
 ```
 
 Then copy your archive (making sure to add the ending `/` in both paths):
 ```
-docker cp ./tools/cache-preloader/vcek_cache/ trustee-as-1:/vcek_cache/
+docker cp ./tools/cache-preloader/vcek-cache/ trustee-as-1:/opt/confidential-containers/vcek-cache/
 ```
 
 - **Mount shared directory**
@@ -124,15 +122,13 @@ updating `docker-compose.yml` with a specified directory mapping:
     ... <existing configuration>
     volumes:
     ... <existing volumes>
-    - ./tools/cache-preloader/vcek_cache:/vcek_cache:rw
+    - ./tools/cache-preloader/vcek-cache:/opt/confidential-containers/vcek-cache:rw
 ```
 
-In the above example, the `cache-preloader` tool's target directory was `./vcek_cache`:
+In the above example, the `cache-preloader` tool's target directory was `./vcek-cache`:
 ```bash
-cargo run -- -u test_urls.txt -c ./vcek_cache
+cargo run -- -u test_urls.txt -c ./vcek-cache
 ```
-
-And `as-config.json` sets `cache_dir` to `/vcek_cache`.
 
 ### Kubernetes Operator:
 
@@ -152,29 +148,27 @@ https://kdsintf.amd.com/vcek/v-1/Genoa/fedcba9876543210?blSPL=02&teeSPL=00&snpSP
 EOF
 
 # Create cache preloader archive
-cargo run -- -u vcek_urls.txt -c ./vcek_cache -a vcek_cache.tar.gz
+cargo run -- -u vcek_urls.txt -c ./vcek-cache -a vcek-cache.tar.gz
 
 # Copy the archive to your air-gapped trustee attestation-service deployment
-scp vcek_cache.tar.gz user@target-host:
+scp vcek-cache.tar.gz user@target-host:
 ```
 
 On the air-gapped trustee attestation-service host:
 ```bash
 # Extract the archive into the desired cache directory
-mkdir vcek_cache
-cd vcek_cache
-tar -xzf ../vcek_cache.tar.gz
+mkdir vcek-cache
+cd vcek-cache
+tar -xzf ../vcek-cache.tar.gz
 
-# Update as-config.json to point to the new cache directory
+# Update as-config.json to enable Disk Caching
 cd /path/to/trustee
 vi kbs/config/as-config.json
 # Update the verifier_config section to:
 #     "verifier_config": {
 #        "snp_verifier": {
 #            "vcek_cache": {
-#                "type": "HttpCacheReqwest",
-#                "offline_mode": true,
-#                "cache_dir": "/vcek_cache"
+#                "type": "DiskCache",
 #            }
 #        }
 #    }
@@ -182,7 +176,7 @@ docker compose build as
 docker compose up -d
 
 # Copy the cache into the running attestation service container
-docker cp ./vcek_cache/ trustee-as-1:/vcek_cache/
+docker cp ./vcek-cache/ trustee-as-1:/opt/confidential-containers/vcek-cache/
 ```
 
 ## Understanding the Cache Structure
@@ -210,7 +204,8 @@ cache-directory/
 
 When transferring the cache to an air-gapped environment, you must preserve
 this exact directory structure. The entire cache directory should be copied
-as-is to the location specified in `cache_dir` configuration.
+as-is to `/opt/confidential-containers/vcek-cache` in the attestation service
+container.
 
 ## Limitations
 
