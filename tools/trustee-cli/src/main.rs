@@ -12,6 +12,7 @@ use std::{
 };
 
 use dirs::home_dir;
+mod cache_preload;
 mod keygen;
 mod run;
 
@@ -42,6 +43,18 @@ pub(crate) enum Commands {
         /// If neither this nor a policy file is provided, the default policy is to deny all.
         #[arg(long)]
         allow_all: bool,
+    },
+    /// Preload URLs into an HTTP cache directory for offline use
+    CachePreload {
+        /// File containing URLs to preload (one per line)
+        #[arg(short, long)]
+        urls_file: PathBuf,
+        /// Cache directory where files will be stored
+        #[arg(short, long, default_value = "./cache")]
+        cache_dir: PathBuf,
+        /// Create a tar.gz archive of the cache directory after preloading
+        #[arg(short, long)]
+        archive: Option<PathBuf>,
     },
 }
 
@@ -78,6 +91,11 @@ async fn main() -> Result<()> {
             config_file,
             allow_all,
         } => run::trustee_run(&cli.home, config_file, allow_all).await,
+        Commands::CachePreload {
+            urls_file,
+            cache_dir,
+            archive,
+        } => cache_preload::cache_preload(urls_file, cache_dir, archive).await,
     }
 }
 
