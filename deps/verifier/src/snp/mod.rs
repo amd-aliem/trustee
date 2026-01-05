@@ -6,7 +6,7 @@ use asn1_rs::{oid, FromDer, Integer, OctetString, Oid};
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use http_cache_reqwest::{
-    Cache, CacheMode, HttpCache, HttpCacheOptions, MokaCacheBuilder, MokaManager,
+    CACacheManager, Cache, CacheMode, HttpCache, HttpCacheOptions, MokaCacheBuilder, MokaManager
 };
 use openssl::{
     nid::Nid,
@@ -106,11 +106,15 @@ fn init_cache_manager() -> MokaManager {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct Snp {}
+pub struct Snp {
+    verifier_config: SnpVerifierConfig,
+}
 
 impl Snp {
-    pub async fn new() -> Result<Self> {
-        Ok(Snp {})
+    pub async fn new(config: Option<SnpVerifierConfig>) -> Result<Self> {
+        Ok(Snp {
+            verifier_config: config.unwrap_or_default(),
+        })
     }
 
     pub fn build_vcek_client(&self) -> reqwest_middleware::ClientWithMiddleware {
@@ -119,17 +123,28 @@ impl Snp {
             ..Default::default()
         };
 
-        let manager = VCEK_CACHE_MANAGER.get_or_init(init_cache_manager).clone();
-
-        let cache = Cache(HttpCache {
-            mode: CacheMode::Default,
-            manager,
-            options: client_options,
-        });
-
-        ClientBuilder::new(reqwest::Client::new())
-            .with(cache)
-            .build()
+        match &self.verifier_config.vcek_cache {
+            VCEKCacheConfig::OfflineDiskCache { path } => {
+                let cache = Cache(HttpCache {
+                    mode: CacheMode::ForceCache,
+                    manager: CACacheManager::new(path.clone().into(), true),
+                    options: client_options,
+                });
+                ClientBuilder::new(reqwest::Client::new())
+                    .with(cache)
+                    .build()
+            }
+            _ => {
+                let cache = Cache(HttpCache {
+                    mode: CacheMode::Default,
+                    manager: VCEK_CACHE_MANAGER.get_or_init(init_cache_manager).clone(),
+                    options: client_options,
+                });
+                ClientBuilder::new(reqwest::Client::new())
+                    .with(cache)
+                    .build()
+            }
+        }
     }
 
     /// Asynchronously fetches the VCEK from the Key Distribution Service (KDS) using the provided attestation report.
@@ -220,6 +235,21 @@ impl Snp {
             status => bail!("Unable to fetch VCEK from URL: {status:?}, {vcek_url:?}"),
         }
     }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub struct SnpVerifierConfig {
+    #[serde(default)]
+    vcek_cache: VCEKCacheConfig,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(tag = "type")]
+#[derive(Default)]
+pub enum VCEKCacheConfig {
+    #[default]
+    None,
+    OfflineDiskCache { path: String },
 }
 
 #[derive(Clone, Debug)]
